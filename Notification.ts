@@ -47,9 +47,11 @@ export class NotificationsController {
             if (postData?.user_id) {
                 where += ` AND notifications.user_id = ${postData?.user_id} `;
                 if(req.tokenUser?.role_id == appConstant.ROLE.REGISTERED || req.tokenUser?.role_id == appConstant.ROLE.SPOUSE){
-                   where += ` AND DATE(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(notifications.metadata, '$.notification_date')),'%Y-%m-%d')) <= DATE('${this.commonDateService.getTodayDate(postData?.date ?? null, 'YYYY-MM-DD')}')`;
+                //    where += ` AND DATE(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(notifications.metadata, '$.notification_date')),'%Y-%m-%d')) <= DATE('${this.commonDateService.getTodayDate(postData?.date ?? null, 'YYYY-MM-DD')}')`;
+                   where += ` AND (JSON_UNQUOTE(JSON_EXTRACT(notifications.metadata, '$.notification_date')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(notifications.metadata, '$.notification_date')) = 'null' OR DATE(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(notifications.metadata, '$.notification_date')),'%Y-%m-%d')) <= DATE('${this.commonDateService.getTodayDate(postData?.date ?? null, 'YYYY-MM-DD')}'))`;
                 }
             }
+            // console.log("=== NOTIFICATION PAGINATE WHERE CLAUSE ===", where);
             if (postData?.search_str) {
                 where += this.commonService.generateDynamicSearchQuery(postData?.search_str, ['notifications.title','notifications.message']);
             }
@@ -336,7 +338,7 @@ export class NotificationsController {
         }
     }
 
-    async removeNotification(postData: any, req: Request, updateData: any = null){
+    async removeNotification(postData: any, req: Request){
         try{
             // let where = `notifications.status !=2 AND notifications.is_read = 0`;
             let where = `notifications.status !=2`;
@@ -374,167 +376,14 @@ export class NotificationsController {
             if(postData?.activity_id){
                 where += ` AND JSON_EXTRACT(notifications.metadata, '$.activity_id') = ${postData?.activity_id}`;
             }
-            const notificationCheck = await this.notificationsService.listRecord(['notifications.id','notifications.status','notifications.metadata'],where);
-            if(updateData && updateData?.schedule_id){
-                let updateObject = {metadata:{}};
-                if(updateData?.start_date){
-                    updateData.start_date = this.commonDateService.getTodayDate(updateData?.start_date).format('YYYY-MM-DD');
-                    updateObject['metadata']['start_date'] = updateData?.start_date;
-                }
-                if(updateData?.end_date){
-                    updateData.end_date = this.commonDateService.getTodayDate(updateData?.end_date).format('YYYY-MM-DD');
-                    updateObject['metadata']['end_date'] = updateData?.end_date;
-                }
-                if(updateData?.reg_start_date){
-                    updateData.reg_start_date = this.commonDateService.getTodayDate(updateData?.reg_start_date).format('YYYY-MM-DD');
-                    updateObject['metadata']['reg_start_date'] = updateData?.reg_start_date;
-                }
-                if(updateData?.reg_end_date){
-                    updateData.reg_end_date = this.commonDateService.getTodayDate(updateData?.reg_end_date).format('YYYY-MM-DD');
-                    updateObject['metadata']['reg_end_date'] = updateData?.reg_end_date;
-                }
-                // for(let ele of notificationCheck){
-                //     await this.notificationsService.update({id: ele.id}, updateObject);
-                // }
-                let startDateResult = [];
-                if(updateData?.start_date && updateData?.old_start_date && updateData?.start_date != this.commonDateService.getTodayDate(updateData?.old_start_date).format('YYYY-MM-DD')){
-                    startDateResult = notificationCheck.filter(ele => ele['metadata']['end_date'] == this.commonDateService.getTodayDate(updateData?.old_start_date).format('YYYY-MM-DD'));
-                    startDateResult?.length ? await this.notificationsService.updateMetaData({id: In(startDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.start_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: updateData?.start_date
-                        }
-                    ) : [];
-                }
-                let endDateResult = [];
-                if(updateData?.end_date && updateData?.old_end_date && updateData?.end_date != this.commonDateService.getTodayDate(updateData?.old_end_date).format('YYYY-MM-DD')){
-                    let endDate = this.commonDateService.getTodayDate(updateData?.old_end_date).subtract(1, 'days').format('YYYY-MM-DD');
-                    endDateResult = notificationCheck.filter(ele => ele['metadata']['end_date'] == this.commonDateService.getTodayDate(updateData?.old_end_date).format('YYYY-MM-DD'));
-                    endDateResult?.length ? await this.notificationsService.updateMetaData({id: In(endDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.end_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: updateData?.end_date
-                        }
-                    ) : [];
-                    endDateResult = notificationCheck.filter(ele => ele['metadata']['end_date'] == endDate);
-                    endDateResult?.length ? await this.notificationsService.updateMetaData({id: In(endDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.end_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: this.commonDateService.getTodayDate(updateData?.end_date).subtract(1, 'days').format('YYYY-MM-DD')
-                        }
-                    ) : [];
-
-                }
-                let regStartDateResult = [];
-                if(updateData?.reg_start_date && updateData?.old_reg_start_date && updateData?.reg_start_date != this.commonDateService.getTodayDate(updateData?.old_reg_start_date).format('YYYY-MM-DD')){
-                    let endDate = this.commonDateService.getTodayDate(updateData?.old_reg_start_date).add(1, 'days').format('YYYY-MM-DD');
-                    regStartDateResult = notificationCheck.filter(ele => ele['metadata']['reg_start_date'] == this.commonDateService.getTodayDate(updateData?.old_reg_start_date).format('YYYY-MM-DD'));
-                    regStartDateResult?.length ? await this.notificationsService.updateMetaData({id: In(regStartDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.reg_start_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: updateData?.reg_start_date
-                        }
-                    ) : [];
-                    regStartDateResult = notificationCheck.filter(ele => ele['metadata']['reg_start_date'] == endDate);
-                    regStartDateResult?.length ? await this.notificationsService.updateMetaData({id: In(regStartDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.reg_start_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: this.commonDateService.getTodayDate(updateData?.reg_start_date).subtract(1, 'days').format('YYYY-MM-DD')
-                        }
-                    ) : [];
-                }
-                let regEndDateResult = [];
-                if(updateData?.reg_end_date && updateData?.old_reg_end_date && updateData?.reg_end_date != this.commonDateService.getTodayDate(updateData?.old_reg_end_date).format('YYYY-MM-DD')){
-                    let endDate = this.commonDateService.getTodayDate(updateData?.old_reg_end_date).subtract(1, 'days').format('YYYY-MM-DD');
-                    regEndDateResult = notificationCheck.filter(ele => ele['metadata']['reg_start_date'] == this.commonDateService.getTodayDate(updateData?.old_reg_end_date).format('YYYY-MM-DD'));
-                    regEndDateResult?.length ? await this.notificationsService.updateMetaData({id: In(regEndDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.reg_end_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: updateData?.reg_end_date
-                        }
-                    ) : [];
-                    regEndDateResult = notificationCheck.filter(ele => ele['metadata']['reg_end_date'] == endDate);
-                    regEndDateResult?.length ? await this.notificationsService.updateMetaData({id: In(regEndDateResult.map(ele => ele.id))}, {
-                        metadata: () => `
-                            JSON_SET(
-                                metadata,
-                                '$.notification_date', :endDate,
-                                '$.reg_end_date', :endDate
-                            )
-                            `
-                        },
-                        {
-                            endDate: this.commonDateService.getTodayDate(updateData?.reg_end_date).subtract(1, 'days').format('YYYY-MM-DD')
-                        }
-                    ) : [];
-
-                }
-            }
-            else{
-                await this.notificationsService.removeEntry(where,postData);
-                notificationCheck?.map(ele=>this.activityLogService.create(ele, {status: 2}, tableConstant.TBL_USERS_NOTIFICATIONS, req.tokenUser?.id, postData?.type == 1 ? 'notification updated' : 'notification delete'));
-            }
+            const notificationCheck = await this.notificationsService.listRecord(['notifications.id','notifications.status'],where);
+            await this.notificationsService.removeEntry(where,postData);
+            notificationCheck?.map(ele=>this.activityLogService.create(ele, {status: 2}, tableConstant.TBL_USERS_NOTIFICATIONS, req.tokenUser?.id, postData?.type == 1 ? 'notification updated' : 'notification delete'));
         }
         catch (error) {
             console.log('error', error);
             return
         }
-    }
-    getValue(obj, path) {
-        return path.split(".").reduce((o, key) => o?.[key], obj);
-    }
-
-    groupByFields(arr, fields, idKey = "id") {
-        return arr.reduce((acc, item) => {
-            const key = fields.map(f => this.getValue(item, f)).join("|");
-
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(item[idKey]);
-
-            return acc;
-        }, {});
     }
     async sendNotification(send_type: number, postData: CreateUserNotificationInput, req: Request){
         try{
